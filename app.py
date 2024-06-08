@@ -4,9 +4,14 @@ import stripe
 from datetime import datetime
 from dotenv import load_dotenv
 import os
+import redis
+import json
 
 load_dotenv()
 
+
+
+redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
@@ -24,10 +29,10 @@ def checkout_session():
     data = request.get_json()
     print(data)
     unit_amount = int(float(data.get("price"))) * 100
-    name = data.get("name")
+    NAME= data.get("name")
     image = data.get("image")
     checkout_session = stripe.checkout.Session.create(
-        customer_email="test@example.com",
+        customer_email="akhil6305964225@gmail.com",
         billing_address_collection="auto",
         line_items=[
             {
@@ -35,7 +40,7 @@ def checkout_session():
                     "currency": "inr",
                     "unit_amount": unit_amount,
                     "product_data": {
-                        "name": name,
+                        "name": NAME,
                         "images" : [image]
                     },
                 },
@@ -53,15 +58,18 @@ def checkout_session():
 
 @app.route('/payment/success', methods=['GET'])
 def payment_success():
-    print("Payment successful")
+    print("Payment successful",request.args)
     session_id = request.args.get("session_id");
-    print(session_id)
+    title = request.args.get("order_title");
+    print(session_id, title)
 
     checkout_session = stripe.checkout.Session.retrieve(session_id)
     print(checkout_session)
 
     email = checkout_session.get('customer_email')
     status = checkout_session.get('status')
+    customer_details = checkout_session.get("customer_details")
+    print(customer_details)
     id = checkout_session.get('id')
     total_amount = float(checkout_session.get('amount_total')) / 100
     timestamp = checkout_session.get("created")
@@ -74,6 +82,22 @@ def payment_success():
 
 
     print(email,status)
+    print(customer_details.name)
+    data = {
+        "email" : email,
+        "status" : status,
+        "orderId" : id,
+        "price" : total_amount,
+        # "title" : title,
+        "purchaseDate" : formatted_time,
+        "subject" : "Order confirmation",
+        "name" : customer_details.name
+    }
+
+    message = json.dumps(data)
+    redis_client.lpush("message_queue",message)
+
+    
 
     return render_template("success.html", email=email , status=status , id=id , formatted_time=formatted_time , total_amount=total_amount)
 
